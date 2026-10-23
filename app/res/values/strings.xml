@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mis Finanzas</string>
+    <string name="listener_label">Mis Finanzas · lector de notificaciones bancarias</string>
+    <string name="widget_label">Mis Finanzas</string>
+    <string name="widget_desc">Ingresos, gastos y presupuesto restante</string>
+</resources>

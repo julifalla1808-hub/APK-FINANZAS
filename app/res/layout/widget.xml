@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical">
+        <TextView android:id="@+id/w_title" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="Mis Finanzas"
+            android:textColor="#00695C" android:textSize="14sp" android:textStyle="bold" />
+        <TextView android:id="@+id/w_add_income" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:background="@drawable/widget_btn" android:paddingLeft="10dp" android:paddingRight="10dp"
+            android:paddingTop="3dp" android:paddingBottom="3dp" android:text="+ Ingreso"
+            android:textColor="#FFFFFF" android:textSize="12sp" />
+        <TextView android:id="@+id/w_add_expense" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginLeft="6dp"
+            android:background="@drawable/widget_btn" android:paddingLeft="10dp" android:paddingRight="10dp"
+            android:paddingTop="3dp" android:paddingBottom="3dp" android:text="+ Gasto"
+            android:textColor="#FFFFFF" android:textSize="12sp" />
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:orientation="horizontal">
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Ingresos del mes" android:textColor="#666666" android:textSize="11sp" />
+            <TextView android:id="@+id/w_income" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="$ 0" android:textColor="#2E7D32" android:textSize="17sp" android:textStyle="bold" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="Gastos del mes" android:textColor="#666666" android:textSize="11sp" />
+            <TextView android:id="@+id/w_expense" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="$ 0" android:textColor="#C62828" android:textSize="17sp" android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView android:id="@+id/w_day" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="6dp" android:text="Hoy: —" android:textColor="#333333" android:textSize="12sp" />
+    <ProgressBar android:id="@+id/w_day_bar" style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent" android:layout_height="6dp" android:max="100" android:progress="0" />
+    <TextView android:id="@+id/w_week" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="2dp" android:text="Semana: —" android:textColor="#333333" android:textSize="12sp" />
+    <TextView android:id="@+id/w_month" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Mes: —" android:textColor="#333333" android:textSize="12sp" />
+    <TextView android:id="@+id/w_fixed" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="" android:textColor="#8D6E63" android:textSize="11sp" />
+</LinearLayout>
