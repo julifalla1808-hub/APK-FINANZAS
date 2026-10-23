@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
     private static final int C_MUTED = 0xFF757575;
 
     private static final String[] TABS = {"Resumen", "Movimientos", "Presupuesto", "Fijos", "Ajustes"};
+    private static final int TAB_LOG = 5;
     private static final String[] PERIODS = {"Hoy", "Semana", "Mes"};
 
     private Db db;
@@ -114,6 +115,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         db.applyAutoFixed();
+        if (hasNotificationAccess()) BankListenerService.requestRebind(this);
         render();
     }
 
@@ -150,6 +152,7 @@ public class MainActivity extends Activity {
             case 1: renderMovements(); break;
             case 2: renderBudget(); break;
             case 3: renderFixed(); break;
+            case TAB_LOG: renderLog(); break;
             default: renderSettings(); break;
         }
     }
@@ -158,7 +161,8 @@ public class MainActivity extends Activity {
         nav.removeAllViews();
         for (int i = 0; i < TABS.length; i++) {
             final int idx = i;
-            TextView t = text(TABS[i], 12, i == tab ? C_PRIMARY : C_MUTED, i == tab);
+            boolean sel = i == (tab == TAB_LOG ? 4 : tab);
+            TextView t = text(TABS[i], 12, sel ? C_PRIMARY : C_MUTED, sel);
             t.setGravity(Gravity.CENTER);
             t.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -380,6 +384,10 @@ public class MainActivity extends Activity {
     }
 
     private void editTx(final Db.Tx existing, int defaultType) {
+        editTx(existing, defaultType, 0, null);
+    }
+
+    private void editTx(final Db.Tx existing, int defaultType, double preAmount, String preDesc) {
         LinearLayout form = form();
         final RadioGroup type = new RadioGroup(this);
         type.setOrientation(RadioGroup.HORIZONTAL);
@@ -400,6 +408,9 @@ public class MainActivity extends Activity {
         if (existing != null) {
             amount.setText(plain(existing.amount));
             desc.setText(existing.description);
+        } else {
+            if (preAmount > 0) amount.setText(plain(preAmount));
+            if (preDesc != null) desc.setText(preDesc);
         }
         form.addView(amount);
         form.addView(desc);
@@ -661,12 +672,46 @@ public class MainActivity extends Activity {
         access.addView(text("Lectura de notificaciones", 16, C_TEXT, true));
         access.addView(text(ok ? "Activa ✓ — los movimientos de tus bancos se registran solos."
                 : "Inactiva — la app no puede ver las notificaciones de tus bancos.", 13, ok ? C_INCOME : C_EXPENSE, false));
+        long connected = db.prefs().getLong(Db.PREF_CONNECTED_AT, 0);
+        long lastEvent = db.prefs().getLong(Db.PREF_LAST_EVENT_AT, 0);
+        access.addView(text("Lector conectado: " + (connected == 0 ? "nunca" : dateFmt.format(connected))
+                + "\nÚltima notificación recibida: " + (lastEvent == 0 ? "ninguna" : dateFmt.format(lastEvent)),
+                12, C_TEXT, false));
+        if (ok && connected == 0) {
+            access.addView(text("El acceso está activo pero Android no ha iniciado el lector. Toca \"Reiniciar lector\" "
+                    + "o desactiva y vuelve a activar el acceso.", 12, C_WARN, false));
+        }
         access.addView(text("Si Android dice \"Configuración restringida\": abre Información de la app → menú ⋮ → "
                 + "\"Permitir configuración restringida\" y vuelve a intentarlo.", 12, C_MUTED, false));
         access.addView(button(ok ? "Abrir ajustes de acceso" : "Dar acceso", C_PRIMARY, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 openNotificationAccess();
+            }
+        }));
+        access.addView(button("Reiniciar lector", 0xFF546E7A, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                restartListener();
+            }
+        }));
+        access.addView(button("Ver registro de notificaciones", 0xFF546E7A, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                tab = TAB_LOG;
+                render();
+            }
+        }));
+        access.addView(text("En Xiaomi, Huawei, Oppo o Samsung el ahorro de batería puede detener el lector: "
+                + "deja Mis Finanzas \"Sin restricciones\" y, si existe, activa \"Inicio automático\".", 12, C_MUTED, false));
+        access.addView(button("Ajustes de batería", 0xFF546E7A, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                } catch (RuntimeException e) {
+                    startActivity(new Intent(Settings.ACTION_SETTINGS));
+                }
             }
         }));
         access.addView(button("Información de la app", 0xFF546E7A, new View.OnClickListener() {
@@ -766,6 +811,79 @@ public class MainActivity extends Activity {
             }
         }));
         content.addView(danger);
+    }
+
+    /** Desactivar y reactivar el componente obliga a Android a volver a conectar el lector. */
+    private void restartListener() {
+        android.content.pm.PackageManager pm = getPackageManager();
+        ComponentName cn = new ComponentName(this, BankListenerService.class);
+        pm.setComponentEnabledSetting(cn, android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP);
+        pm.setComponentEnabledSetting(cn, android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                android.content.pm.PackageManager.DONT_KILL_APP);
+        BankListenerService.requestRebind(this);
+        toast(hasNotificationAccess() ? "Lector reiniciado" : "Primero da acceso a notificaciones");
+        content.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                render();
+            }
+        }, 1500);
+    }
+
+    // ================================================================= Registro de notificaciones
+
+    private void renderLog() {
+        LinearLayout head = card();
+        head.addView(text("Registro de notificaciones", 16, C_TEXT, true));
+        head.addView(text("Últimas notificaciones con números que leyó la app y qué hizo con cada una. "
+                + "Toca una para registrarla a mano si no se reconoció.", 12, C_MUTED, false));
+        LinearLayout actions = hrow();
+        actions.addView(button("Volver", C_PRIMARY, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                tab = 4;
+                render();
+            }
+        }), weightGap());
+        actions.addView(button("Limpiar", 0xFF90A4AE, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                db.clearLog();
+                render();
+            }
+        }), weightGap());
+        head.addView(actions);
+        content.addView(head);
+
+        List<Db.LogEntry> list = db.listLog();
+        if (list.isEmpty()) {
+            LinearLayout c = card();
+            c.addView(text("No ha llegado ninguna notificación con números desde que se activó el lector.\n\n"
+                    + "Si ya te llegó una notificación del banco y no aparece aquí, Android no está entregando las "
+                    + "notificaciones a la app: toca \"Reiniciar lector\" en Ajustes, revisa la batería o desactiva y "
+                    + "vuelve a activar el acceso a notificaciones.", 13, C_TEXT, false));
+            content.addView(c);
+        }
+        for (final Db.LogEntry e : list) {
+            LinearLayout c = card();
+            boolean saved = e.outcome != null && e.outcome.startsWith("Registrada");
+            c.addView(text(e.label + " · " + dateFmt.format(e.ts), 12, C_MUTED, false));
+            c.addView(text(e.text, 13, C_TEXT, false));
+            c.addView(text(e.outcome, 12, saved ? C_INCOME : C_WARN, true));
+            if (!saved) {
+                c.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        NotificationParser.Result r = NotificationParser.parse("", e.text);
+                        int type = r != null ? r.type : NotificationParser.INCOME;
+                        double amount = r != null ? r.amount : 0;
+                        editTx(null, type, amount, r != null ? r.description : e.label);
+                    }
+                });
+            }
+            content.addView(c);
+        }
     }
 
     private boolean hasNotificationAccess() {

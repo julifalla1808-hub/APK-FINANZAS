@@ -33,7 +33,8 @@ public final class NotificationParser {
 
     // Palabras que indican dinero que entra a la cuenta.
     private static final String[] INCOME_WORDS = {
-            "recibiste", "te enviaron", "te consignaron", "te transfirieron", "te depositaron",
+            "recibiste", "recibes", "te enviaron", "te envio", "te transfirio", "te consigno", "te deposito",
+            "te abono", "te pago", "llego plata", "te llego plata", "llegaron", "entro", "entraron", "te consignaron", "te transfirieron", "te depositaron",
             "te abonaron", "te llego", "te llegaron", "has recibido", "recibio", "recibido", "recibida",
             "consignacion", "consignaron", "abono", "abonamos", "abonado", "abonaron", "deposito",
             "depositaron", "ingreso", "nomina", "reembolso", "devolucion", "acreditado", "acreditamos",
@@ -51,7 +52,7 @@ public final class NotificationParser {
     // Si aparecen, la operación no se realizó: no se registra nada.
     private static final String[] IGNORE_WORDS = {
             "rechazad", "declinad", "fallid", "no exitos", "no fue posible", "no se pudo", "cancelad",
-            "codigo de verificacion", "clave dinamica", "otp"
+            "codigo de verificacion", "clave dinamica", "codigo de seguridad"
     };
 
     // Montos precedidos por estas palabras no son el movimiento sino un saldo o cupo.
@@ -62,6 +63,9 @@ public final class NotificationParser {
             "(?:\\$|cop|usd|us\\$|eur|€)\\s?" + NUM);
     private static final Pattern CURRENCY_AFTER = Pattern.compile(
             NUM + "\\s?(?:pesos|cop|usd|dolares|euros)\\b");
+    // Último recurso: número con separador de miles sin símbolo de moneda ("Recibiste 50.000 de Juan").
+    private static final Pattern BARE_THOUSANDS = Pattern.compile(
+            "(?<![0-9*/:.,])([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?)(?![0-9/:])");
     private static final Pattern MERCHANT = Pattern.compile(
             "(?i)\\b(?:en|a|de|desde)\\s+([\\p{L}0-9][\\p{L}0-9 &*'\\-]{1,38}[\\p{L}0-9])");
 
@@ -136,6 +140,13 @@ public final class NotificationParser {
                 break;
             }
         }
+        if (best == null) {
+            Matcher m = BARE_THOUSANDS.matcher(norm);
+            while (m.find()) {
+                if (isBalance(norm, m.start())) continue;
+                return new int[]{m.start(1), m.end(1)};
+            }
+        }
         return best;
     }
 
@@ -190,7 +201,7 @@ public final class NotificationParser {
         return full.length() > 40 ? full.substring(0, 40) : full;
     }
 
-    private static final String[] MERCHANT_STOP = {" con ", " el ", " por ", " desde ", " a las ", " ref", " cta", " para "};
+    private static final String[] MERCHANT_STOP = {" con ", " el ", " por ", " en tu ", " en su ", " en la ", " desde ", " a las ", " ref", " cta", " para "};
     private static final String[] MERCHANT_REJECT = {"tu ", "su ", "cuenta", "la cuenta", "tarjeta", "cta", "t.",
             "nequi", "daviplata", "ahorros", "corriente", "pesos", "dinero", "plata"};
 

@@ -24,6 +24,8 @@ public final class Db extends SQLiteOpenHelper {
     public static final String PREF_BUDGET_WEEK = "budget_week";
     public static final String PREF_BUDGET_MONTH = "budget_month";
     public static final String PREF_AUTO_FIXED = "auto_fixed";
+    public static final String PREF_CONNECTED_AT = "listener_connected_at";
+    public static final String PREF_LAST_EVENT_AT = "listener_last_event_at";
 
     private static Db instance;
 
@@ -35,7 +37,7 @@ public final class Db extends SQLiteOpenHelper {
     private final Context context;
 
     private Db(Context c) {
-        super(c, "finanzas.db", null, 1);
+        super(c, "finanzas.db", null, 2);
         context = c;
     }
 
@@ -47,10 +49,74 @@ public final class Db extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE fixed (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, amount REAL NOT NULL,"
                 + " day INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1)");
         db.execSQL("CREATE TABLE apps (pkg TEXT PRIMARY KEY, label TEXT, enabled INTEGER NOT NULL DEFAULT 1, last_seen INTEGER)");
+        createV2(db);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldV, int newV) {
+        if (oldV < 2) createV2(db);
+    }
+
+    private static void createV2(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS seen (key TEXT PRIMARY KEY, ts INTEGER NOT NULL)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL,"
+                + " pkg TEXT, label TEXT, text TEXT, outcome TEXT)");
+    }
+
+    // ---------------------------------------------------------------- diagnóstico
+
+    /** Marca una notificación como procesada; devuelve false si ya se había procesado antes. */
+    public boolean markSeen(String key) {
+        SQLiteDatabase db = getWritableDatabase();
+        long now = System.currentTimeMillis();
+        db.delete("seen", "ts<?", new String[]{String.valueOf(now - 7L * 24 * 3600 * 1000)});
+        ContentValues v = new ContentValues();
+        v.put("key", key);
+        v.put("ts", now);
+        return db.insertWithOnConflict("seen", null, v, SQLiteDatabase.CONFLICT_IGNORE) != -1;
+    }
+
+    public static final class LogEntry {
+        public long ts;
+        public String pkg;
+        public String label;
+        public String text;
+        public String outcome;
+    }
+
+    public void log(String pkg, String label, String text, String outcome) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues v = new ContentValues();
+        v.put("ts", System.currentTimeMillis());
+        v.put("pkg", pkg);
+        v.put("label", label);
+        v.put("text", text);
+        v.put("outcome", outcome);
+        db.insert("log", null, v);
+        db.execSQL("DELETE FROM log WHERE id NOT IN (SELECT id FROM log ORDER BY id DESC LIMIT 80)");
+    }
+
+    public List<LogEntry> listLog() {
+        List<LogEntry> out = new ArrayList<LogEntry>();
+        Cursor c = getReadableDatabase().rawQuery("SELECT ts, pkg, label, text, outcome FROM log ORDER BY id DESC", null);
+        try {
+            while (c.moveToNext()) {
+                LogEntry e = new LogEntry();
+                e.ts = c.getLong(0);
+                e.pkg = c.getString(1);
+                e.label = c.getString(2);
+                e.text = c.getString(3);
+                e.outcome = c.getString(4);
+                out.add(e);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    public void clearLog() {
+        getWritableDatabase().delete("log", null, null);
     }
 
     // ---------------------------------------------------------------- movimientos
@@ -130,11 +196,16 @@ public final class Db extends SQLiteOpenHelper {
         }
     }
 
-    /** Evita registrar dos veces la misma notificación (los bancos a veces la actualizan o repiten). */
-    public boolean isDuplicate(String raw, String source, long ts) {
+    /**
+     * Muchos bancos avisan el mismo movimiento por la app y por SMS: si ya se registró automáticamente
+     * el mismo monto y tipo con menos de 3 minutos de diferencia, se trata como repetido.
+     */
+    public boolean isDuplicate(double amount, int type, long ts) {
+        long w = 3 * 60 * 1000L;
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT 1 FROM tx WHERE raw=? AND source=? AND ts>? LIMIT 1",
-                new String[]{raw, source, String.valueOf(ts - 3 * 60 * 1000L)});
+                "SELECT 1 FROM tx WHERE origin=? AND type=? AND ABS(amount-?)<0.01 AND ts>? AND ts<? LIMIT 1",
+                new String[]{ORIGIN_AUTO, String.valueOf(type), String.valueOf(amount),
+                        String.valueOf(ts - w), String.valueOf(ts + w)});
         try {
             return c.moveToFirst();
         } finally {
@@ -296,6 +367,8 @@ public final class Db extends SQLiteOpenHelper {
         db.delete("tx", null, null);
         db.delete("fixed", null, null);
         db.delete("apps", null, null);
+        db.delete("seen", null, null);
+        db.delete("log", null, null);
         prefs().edit().clear().apply();
     }
 
